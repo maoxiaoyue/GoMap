@@ -229,6 +229,8 @@ github.com/leodido/go-urn v1.4.0/go.mod h1:bvxc+MVxLKB4z00jd1z+Dvzr47oO32F/QSNjS
 github.com/magiconair/properties v1.8.5/go.mod h1:y3VJvCyxH9uVvJTWEGAELF3aiYNyPKd5NZ3oSwXrF60=
 github.com/maoxiaoyue/hypgo v0.8.7-0.20260614190915-68a4ddd19222 h1:bzZSeAuq0JBoPDCe4eHoO7vdiOJ71s/gDTcx9wLMdXw=
 github.com/maoxiaoyue/hypgo v0.8.7-0.20260614190915-68a4ddd19222/go.mod h1:VpQUO4fyfF/l+7tYWyU4XAhPObDToYx35YFL8wZ8W+g=
+github.com/maoxiaoyue/hypgo v0.8.7-0.20260617170231-2809bc68a047 h1:xvralImuGYEWPHMzj0VrHJzy6Sb+5z4aPU6rw/uxXAQ=
+github.com/maoxiaoyue/hypgo v0.8.7-0.20260617170231-2809bc68a047/go.mod h1:VpQUO4fyfF/l+7tYWyU4XAhPObDToYx35YFL8wZ8W+g=
 github.com/mattn/go-colorable v0.0.9/go.mod h1:9vuHe8Xs5qXnSaW/c/ABM9alt+Vo+STaOChaDxuIBZU=
 github.com/mattn/go-isatty v0.0.3/go.mod h1:M+lRXTBqGeGNdLjl/ufCoiOlB5xdOkqRJdNxMWT7Zi4=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=

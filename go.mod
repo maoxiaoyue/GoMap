@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	fyne.io/fyne/v2 v2.5.4
-	github.com/maoxiaoyue/hypgo v0.8.7-0.20260614190915-68a4ddd19222
+	github.com/maoxiaoyue/hypgo v0.8.7-0.20260617170231-2809bc68a047
 	gopkg.in/yaml.v3 v3.0.1
 )
 
