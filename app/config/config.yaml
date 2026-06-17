@@ -1,0 +1,15 @@
+# Map Configuration
+app:
+  name: "map"
+  version: "0.1.0"
+  width: 800
+  height: 600
+
+database:
+  driver: ""
+  dsn: ""
+
+logger:
+  level: info
+  output: stdout
+  colors: true
