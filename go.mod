@@ -5,6 +5,7 @@ go 1.26
 require (
 	fyne.io/fyne/v2 v2.5.4
 	github.com/maoxiaoyue/hypgo v0.8.7-0.20260614190915-68a4ddd19222
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -45,5 +46,4 @@ require (
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

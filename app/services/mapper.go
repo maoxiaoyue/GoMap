@@ -73,13 +73,27 @@ func BuildMap(inputDir, outputDir string) (models.MapResult, error) {
 		res.GoFiles += len(p.goFiles)
 	}
 
-	idx := renderIndex(pkgs, modulePath, noteByImport)
+	// 若被掃描的專案是 HypGo 專案（含 .hyp/context.yaml），參考其內容併入 map。
+	hypNote := ""
+	if hc, src, ok := loadHypContext(moduleRoot, inputDir); ok {
+		const name = "HypGo Context"
+		content := renderHypContextNote(hc, src, buildNoteByPkgName(pkgs, noteByImport))
+		if err := os.WriteFile(filepath.Join(outputDir, name+".md"), []byte(content), 0o644); err != nil {
+			return res, fmt.Errorf("無法寫入 HypGo Context 筆記: %w", err)
+		}
+		hypNote = name
+	}
+
+	idx := renderIndex(pkgs, modulePath, noteByImport, hypNote)
 	if err := os.WriteFile(filepath.Join(outputDir, "Index.md"), []byte(idx), 0o644); err != nil {
 		return res, fmt.Errorf("無法寫入索引: %w", err)
 	}
 
 	res.Packages = len(pkgs)
-	res.Notes = len(pkgs) + 1
+	res.Notes = len(pkgs) + 1 // 套件筆記 + Index
+	if hypNote != "" {
+		res.Notes++ // HypGo Context 筆記
+	}
 	res.OutputDir = outputDir
 	return res, nil
 }
@@ -202,7 +216,8 @@ func renderPackageNote(p *pkgInfo, modulePath string, noteByImport map[string]st
 }
 
 // renderIndex 產生 MOC（Map of Content）索引筆記，連到所有套件。
-func renderIndex(pkgs []*pkgInfo, modulePath string, noteByImport map[string]string) string {
+// hypNote 非空時，額外加入連往 HypGo Context 筆記的區段。
+func renderIndex(pkgs []*pkgInfo, modulePath string, noteByImport map[string]string, hypNote string) string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("tags: [go-map, moc]\n")
@@ -217,6 +232,9 @@ func renderIndex(pkgs []*pkgInfo, modulePath string, noteByImport map[string]str
 		b.WriteString(" — " + modulePath)
 	}
 	b.WriteString("\n\n由 Go 專案自動產生的套件關係圖，共 " + strconv.Itoa(len(pkgs)) + " 個套件。\n\n")
+	if hypNote != "" {
+		b.WriteString("## HypGo\n\n- [[" + hypNote + "]] — 路由、模型與設定（取自 .hyp/context.yaml）\n\n")
+	}
 	b.WriteString("## 套件 (Packages)\n\n")
 	for _, p := range pkgs {
 		b.WriteString("- [[" + noteByImport[p.importPath] + "]] — `" + p.importPath + "`\n")

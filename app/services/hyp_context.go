@@ -1,0 +1,238 @@
+package services
+
+// hyp_context.go 處理 HypGo 專案的 .hyp/context.yaml：
+// 當被掃描的 Go 專案是 HypGo 專案（存在 .hyp/context.yaml）時，解析其內容
+// （路由 schema、資料模型、伺服器設定），併入 Obsidian map，並把路由的 handler
+// 連回對應的套件筆記，讓 API 結構直接出現在關係圖中。
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// hypContext 對應 .hyp/context.yaml 的子集（只取產 map 需要的欄位；
+// yaml.v3 會忽略未列出的欄位，因此對 HypGo 版本差異具韌性）。
+type hypContext struct {
+	Version     string     `yaml:"version"`
+	Framework   string     `yaml:"framework"`
+	GeneratedAt string     `yaml:"generated_at"`
+	Server      hypServer  `yaml:"server"`
+	Routes      []hypRoute `yaml:"routes"`
+	Models      []hypModel `yaml:"models"`
+	Middleware  []string   `yaml:"middleware"`
+	Lint        *hypLint   `yaml:"lint"`
+}
+
+type hypServer struct {
+	Addr     string `yaml:"addr"`
+	Protocol string `yaml:"protocol"`
+	TLS      bool   `yaml:"tls"`
+}
+
+type hypRoute struct {
+	Protocol     string         `yaml:"protocol"`
+	Command      string         `yaml:"command"`
+	Method       string         `yaml:"method"`
+	Path         string         `yaml:"path"`
+	Summary      string         `yaml:"summary"`
+	Tags         []string       `yaml:"tags"`
+	InputType    string         `yaml:"input_type"`
+	OutputType   string         `yaml:"output_type"`
+	HandlerNames []string       `yaml:"handler_names"`
+	Responses    map[int]string `yaml:"responses"`
+}
+
+type hypModel struct {
+	Name   string     `yaml:"name"`
+	Table  string     `yaml:"table"`
+	Fields []hypField `yaml:"fields"`
+}
+
+type hypField struct {
+	Name   string `yaml:"name"`
+	GoType string `yaml:"go_type"`
+	PK     bool   `yaml:"pk"`
+}
+
+type hypLint struct {
+	Coverage   string `yaml:"coverage"`
+	Total      int    `yaml:"total"`
+	WithSchema int    `yaml:"with_schema"`
+}
+
+// loadHypContext 於 module root（其次為 inputDir）尋找並解析 .hyp/context.yaml。
+// 回傳解析結果、來源路徑，以及是否找到。解析失敗視同未找到。
+func loadHypContext(moduleRoot, inputDir string) (*hypContext, string, bool) {
+	candidates := []string{filepath.Join(moduleRoot, ".hyp", "context.yaml")}
+	if inputDir != moduleRoot {
+		candidates = append(candidates, filepath.Join(inputDir, ".hyp", "context.yaml"))
+	}
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var hc hypContext
+		if err := yaml.Unmarshal(data, &hc); err != nil {
+			continue
+		}
+		return &hc, p, true
+	}
+	return nil, "", false
+}
+
+// buildNoteByPkgName 由套件名稱對應到其筆記名，供 handler 連結使用。
+// 同名套件（罕見）視為歧義並排除，以免連到錯誤的筆記。
+func buildNoteByPkgName(pkgs []*pkgInfo, noteByImport map[string]string) map[string]string {
+	byName := make(map[string]string)
+	dup := make(map[string]bool)
+	for _, p := range pkgs {
+		if _, ok := byName[p.name]; ok {
+			dup[p.name] = true
+			continue
+		}
+		byName[p.name] = noteByImport[p.importPath]
+	}
+	for n := range dup {
+		delete(byName, n)
+	}
+	return byName
+}
+
+// renderHypContextNote 產生「HypGo Context」筆記，內含路由、模型與設定摘要。
+func renderHypContextNote(hc *hypContext, srcPath string, noteByPkgName map[string]string) string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("tags: [hypgo, context]\n")
+	if hc.Framework != "" {
+		b.WriteString("framework: " + hc.Framework + "\n")
+	}
+	if hc.Version != "" {
+		b.WriteString("version: \"" + hc.Version + "\"\n")
+	}
+	b.WriteString("---\n\n")
+
+	b.WriteString("# HypGo Context\n\n")
+	b.WriteString("來源：`" + filepath.ToSlash(srcPath) + "`\n\n")
+	if hc.Framework != "" {
+		line := "- 框架：" + hc.Framework
+		if hc.Version != "" {
+			line += " v" + hc.Version
+		}
+		b.WriteString(line + "\n")
+	}
+	if hc.GeneratedAt != "" {
+		b.WriteString("- 產生時間：" + hc.GeneratedAt + "\n")
+	}
+	if hc.Server.Addr != "" || hc.Server.Protocol != "" {
+		b.WriteString(fmt.Sprintf("- 伺服器：`%s`（協議 %s、TLS %v）\n", hc.Server.Addr, hc.Server.Protocol, hc.Server.TLS))
+	}
+	if hc.Lint != nil && hc.Lint.Coverage != "" {
+		b.WriteString("- Schema 覆蓋率：" + hc.Lint.Coverage + "\n")
+	}
+	if len(hc.Middleware) > 0 {
+		b.WriteString("- Middleware：" + strings.Join(hc.Middleware, "、") + "\n")
+	}
+	b.WriteString("\n")
+
+	b.WriteString("## 路由 (Routes)\n\n")
+	if len(hc.Routes) == 0 {
+		b.WriteString("_（manifest 未含任何路由）_\n\n")
+	} else {
+		routes := append([]hypRoute(nil), hc.Routes...)
+		sort.Slice(routes, func(i, j int) bool {
+			if pi, pj := routes[i].protoOrRest(), routes[j].protoOrRest(); pi != pj {
+				return pi < pj
+			}
+			return routes[i].label() < routes[j].label()
+		})
+		for _, rt := range routes {
+			b.WriteString("- " + rt.markdown(noteByPkgName) + "\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(hc.Models) > 0 {
+		b.WriteString("## 資料模型 (Models)\n\n")
+		for _, m := range hc.Models {
+			head := "- **" + m.Name + "**"
+			if m.Table != "" {
+				head += " — 資料表 `" + m.Table + "`"
+			}
+			b.WriteString(head + "\n")
+			for _, f := range m.Fields {
+				row := "    - " + f.Name + " `" + f.GoType + "`"
+				if f.PK {
+					row += "（PK）"
+				}
+				b.WriteString(row + "\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// protoOrRest 回傳協議，空字串視為 "rest"。
+func (r hypRoute) protoOrRest() string {
+	if r.Protocol == "" {
+		return "rest"
+	}
+	return r.Protocol
+}
+
+// label 回傳排序與顯示用的識別字串。
+func (r hypRoute) label() string {
+	if r.protoOrRest() == "rest" {
+		return r.Method + " " + r.Path
+	}
+	return r.Command
+}
+
+// markdown 產生單一路由的條目，並把 handler 連回所屬套件筆記。
+func (r hypRoute) markdown(noteByPkgName map[string]string) string {
+	var sb strings.Builder
+	if r.protoOrRest() == "rest" {
+		sb.WriteString("**" + r.Method + "** `" + r.Path + "`")
+	} else {
+		sb.WriteString("[" + r.protoOrRest() + "] `" + r.Command + "`")
+	}
+	if r.Summary != "" {
+		sb.WriteString(" — " + r.Summary)
+	}
+	if r.InputType != "" || r.OutputType != "" {
+		in, out := r.InputType, r.OutputType
+		if in == "" {
+			in = "—"
+		}
+		if out == "" {
+			out = "—"
+		}
+		sb.WriteString(fmt.Sprintf("（%s → %s）", in, out))
+	}
+	if len(r.HandlerNames) > 0 {
+		if note := handlerNote(r.HandlerNames[0], noteByPkgName); note != "" {
+			sb.WriteString(" → [[" + note + "]]")
+		}
+	}
+	return sb.String()
+}
+
+// handlerNote 由 handler 名稱（如 "controllers.(*UserController).Create"）取其
+// 套件名，對應到該套件的筆記名；找不到則回傳空字串。
+func handlerNote(handler string, noteByPkgName map[string]string) string {
+	if handler == "" {
+		return ""
+	}
+	pkg := handler
+	if i := strings.IndexByte(pkg, '.'); i >= 0 {
+		pkg = pkg[:i]
+	}
+	return noteByPkgName[pkg]
+}
