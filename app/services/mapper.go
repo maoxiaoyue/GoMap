@@ -1,0 +1,316 @@
+// Package services 提供 GoMap 的核心功能：將一個 Go 專案掃描成
+// Obsidian 的筆記網 (vault)。每個 Go 套件 (package) 會變成一篇筆記，
+// 套件之間的 import 關係則以 Obsidian 的 [[wikilink]] 串起來，
+// 讓 Obsidian 的關係圖 (graph view) 直接呈現專案結構。
+//
+// CLI 模式 (main) 與未來的 GUI 掃描畫面都呼叫同一個 BuildMap，確保兩條
+// 路徑行為一致。
+package services
+
+import (
+	"fmt"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"map/app/models"
+)
+
+// pkgInfo 累積單一套件（單一目錄）的資訊。
+type pkgInfo struct {
+	name       string          // package 宣告的名稱
+	importPath string          // 完整 import path（無 go.mod 時退化為相對路徑）
+	relDir     string          // 相對 module root 的目錄，用來產生唯一的筆記名
+	goFiles    []string        // 該套件的 .go 檔（basename）
+	imports    map[string]bool // 去重後的 import 集合
+}
+
+// BuildMap 掃描 inputDir 內的 Go 專案，於 outputDir 產生 Obsidian map。
+// outputDir 不存在時會自動建立。
+func BuildMap(inputDir, outputDir string) (models.MapResult, error) {
+	var res models.MapResult
+
+	info, err := os.Stat(inputDir)
+	if err != nil {
+		return res, fmt.Errorf("無法讀取輸入目錄 %q: %w", inputDir, err)
+	}
+	if !info.IsDir() {
+		return res, fmt.Errorf("輸入路徑不是目錄: %q", inputDir)
+	}
+
+	moduleRoot, modulePath := findModule(inputDir)
+
+	pkgs, err := scanPackages(inputDir, moduleRoot, modulePath)
+	if err != nil {
+		return res, err
+	}
+	if len(pkgs) == 0 {
+		return res, fmt.Errorf("在 %q 找不到任何 Go 套件", inputDir)
+	}
+
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return res, fmt.Errorf("無法建立輸出目錄 %q: %w", outputDir, err)
+	}
+
+	// importPath → 筆記名（不含 .md），供內部相依的 [[wikilink]] 使用。
+	noteByImport := make(map[string]string, len(pkgs))
+	for _, p := range pkgs {
+		noteByImport[p.importPath] = noteName(p.relDir, p.importPath)
+	}
+
+	for _, p := range pkgs {
+		content := renderPackageNote(p, modulePath, noteByImport)
+		fpath := filepath.Join(outputDir, noteByImport[p.importPath]+".md")
+		if err := os.WriteFile(fpath, []byte(content), 0o644); err != nil {
+			return res, fmt.Errorf("無法寫入筆記 %q: %w", fpath, err)
+		}
+		res.GoFiles += len(p.goFiles)
+	}
+
+	idx := renderIndex(pkgs, modulePath, noteByImport)
+	if err := os.WriteFile(filepath.Join(outputDir, "Index.md"), []byte(idx), 0o644); err != nil {
+		return res, fmt.Errorf("無法寫入索引: %w", err)
+	}
+
+	res.Packages = len(pkgs)
+	res.Notes = len(pkgs) + 1
+	res.OutputDir = outputDir
+	return res, nil
+}
+
+// scanPackages 走訪 inputDir，依目錄將 .go 檔聚合成套件，並收集其 import。
+func scanPackages(inputDir, moduleRoot, modulePath string) ([]*pkgInfo, error) {
+	byDir := make(map[string]*pkgInfo)
+	fset := token.NewFileSet()
+
+	err := filepath.WalkDir(inputDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if p != inputDir && skipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+
+		// ImportsOnly 只解析 package 宣告與 import，足夠且快速。
+		f, perr := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
+		if perr != nil {
+			return nil // 解析失敗的檔案略過，不中斷整體掃描
+		}
+
+		dir := filepath.Dir(p)
+		pi := byDir[dir]
+		if pi == nil {
+			rel, _ := filepath.Rel(moduleRoot, dir)
+			rel = filepath.ToSlash(rel)
+			if rel == "." {
+				rel = ""
+			}
+			pi = &pkgInfo{
+				name:       f.Name.Name,
+				relDir:     rel,
+				importPath: buildImportPath(modulePath, rel),
+				imports:    make(map[string]bool),
+			}
+			byDir[dir] = pi
+		}
+		pi.goFiles = append(pi.goFiles, d.Name())
+		for _, imp := range f.Imports {
+			if ip, e := strconv.Unquote(imp.Path.Value); e == nil {
+				pi.imports[ip] = true
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("掃描失敗: %w", err)
+	}
+
+	pkgs := make([]*pkgInfo, 0, len(byDir))
+	for _, p := range byDir {
+		sort.Strings(p.goFiles)
+		pkgs = append(pkgs, p)
+	}
+	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].importPath < pkgs[j].importPath })
+	return pkgs, nil
+}
+
+// renderPackageNote 產生單一套件的 Obsidian 筆記內容。
+func renderPackageNote(p *pkgInfo, modulePath string, noteByImport map[string]string) string {
+	var internal, external []string
+	for imp := range p.imports {
+		if isInternal(imp, modulePath) {
+			internal = append(internal, imp)
+		} else {
+			external = append(external, imp)
+		}
+	}
+	sort.Strings(internal)
+	sort.Strings(external)
+
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("tags: [go-package]\n")
+	b.WriteString("package: " + p.name + "\n")
+	b.WriteString("import: \"" + p.importPath + "\"\n")
+	b.WriteString("files: " + strconv.Itoa(len(p.goFiles)) + "\n")
+	b.WriteString("---\n\n")
+
+	b.WriteString("# " + p.name + "\n\n")
+	b.WriteString("`" + p.importPath + "`\n\n")
+
+	b.WriteString("## 內部相依 (Internal imports)\n\n")
+	if len(internal) == 0 {
+		b.WriteString("_（無）_\n\n")
+	} else {
+		for _, imp := range internal {
+			if note, ok := noteByImport[imp]; ok {
+				b.WriteString("- [[" + note + "]]\n")
+			} else {
+				b.WriteString("- `" + imp + "`\n") // 內部但未掃描到對應目錄
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("## 外部相依 (External imports)\n\n")
+	if len(external) == 0 {
+		b.WriteString("_（無）_\n\n")
+	} else {
+		for _, imp := range external {
+			b.WriteString("- `" + imp + "`\n")
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("## 檔案 (Files)\n\n")
+	for _, f := range p.goFiles {
+		b.WriteString("- " + f + "\n")
+	}
+	return b.String()
+}
+
+// renderIndex 產生 MOC（Map of Content）索引筆記，連到所有套件。
+func renderIndex(pkgs []*pkgInfo, modulePath string, noteByImport map[string]string) string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("tags: [go-map, moc]\n")
+	if modulePath != "" {
+		b.WriteString("module: \"" + modulePath + "\"\n")
+	}
+	b.WriteString("packages: " + strconv.Itoa(len(pkgs)) + "\n")
+	b.WriteString("---\n\n")
+
+	b.WriteString("# GoMap")
+	if modulePath != "" {
+		b.WriteString(" — " + modulePath)
+	}
+	b.WriteString("\n\n由 Go 專案自動產生的套件關係圖，共 " + strconv.Itoa(len(pkgs)) + " 個套件。\n\n")
+	b.WriteString("## 套件 (Packages)\n\n")
+	for _, p := range pkgs {
+		b.WriteString("- [[" + noteByImport[p.importPath] + "]] — `" + p.importPath + "`\n")
+	}
+	return b.String()
+}
+
+// findModule 在 inputDir 樹中尋找最淺的 go.mod，回傳其所在目錄與 module path。
+// 找不到時 root 退化為 inputDir、modulePath 為空字串。
+func findModule(inputDir string) (root, modulePath string) {
+	bestDepth := -1
+	_ = filepath.WalkDir(inputDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != inputDir && skipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "go.mod" {
+			return nil
+		}
+		depth := strings.Count(filepath.ToSlash(p), "/")
+		if bestDepth == -1 || depth < bestDepth {
+			if mp := readModulePath(p); mp != "" {
+				bestDepth = depth
+				root = filepath.Dir(p)
+				modulePath = mp
+			}
+		}
+		return nil
+	})
+	if root == "" {
+		root = inputDir
+	}
+	return root, modulePath
+}
+
+// readModulePath 從 go.mod 取出 module path。
+func readModulePath(goModPath string) string {
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
+}
+
+// buildImportPath 由 module path 與相對目錄組出完整 import path。
+func buildImportPath(modulePath, rel string) string {
+	if modulePath == "" {
+		if rel == "" {
+			return "."
+		}
+		return rel
+	}
+	if rel == "" {
+		return modulePath
+	}
+	return modulePath + "/" + rel
+}
+
+// noteName 產生唯一且可作為檔名的筆記名稱。
+func noteName(relDir, importPath string) string {
+	if relDir == "" { // module root 套件
+		base := path.Base(importPath)
+		if base == "." || base == "" {
+			return "root"
+		}
+		return base
+	}
+	return strings.ReplaceAll(relDir, "/", "-")
+}
+
+// isInternal 判斷 import 是否屬於本 module。
+func isInternal(importPath, modulePath string) bool {
+	if modulePath == "" {
+		return false
+	}
+	return importPath == modulePath || strings.HasPrefix(importPath, modulePath+"/")
+}
+
+// skipDir 回報走訪時應略過的目錄。
+func skipDir(name string) bool {
+	switch name {
+	case "vendor", "node_modules", "testdata", ".git", ".hyp", ".idea":
+		return true
+	}
+	return strings.HasPrefix(name, ".")
+}
