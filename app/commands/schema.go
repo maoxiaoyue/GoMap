@@ -33,11 +33,13 @@ var MapCommand = schema.Route{
 
 // RegisterSchemas 向 Schema Registry 註冊所有 CLI 命令（Protocol "cli"）。
 func RegisterSchemas() {
+	//@ai:think intent=啟動時把 CLI 命令登錄到 schema.Global()，讓 hyp lint / context 不必讀實作即可理解介面 model=claude-opus-4-8
 	schema.Global().Register(MapCommand)
 }
 
 // FlagToken 將旗標名加上前綴：單字元用 "-x"、多字元用 "--xx"。
 func FlagToken(name string) string {
+	//@ai:think intent=依旗標名長度補上 - 或 -- 前綴，讓 usage 與缺漏訊息顯示一致 model=claude-opus-4-8
 	if len(name) == 1 {
 		return "-" + name
 	}
@@ -47,6 +49,7 @@ func FlagToken(name string) string {
 // BindFlags 依 MapCommand 的 Params 在 fs 上註冊旗標（schema 為單一事實來源），
 // 回傳「旗標名 → 值指標」對照表，供解析後取值。
 func BindFlags(fs *flag.FlagSet) map[string]*string {
+	//@ai:think intent=由 schema 的 Params 動態註冊旗標，使 schema 成為旗標定義的單一事實來源 model=claude-opus-4-8
 	vals := make(map[string]*string, len(MapCommand.Params))
 	for _, p := range MapCommand.Params {
 		vals[p.Name] = fs.String(p.Name, "", p.Desc)
@@ -56,6 +59,7 @@ func BindFlags(fs *flag.FlagSet) map[string]*string {
 
 // MissingRequired 依 schema 檢查必填旗標，回傳尚未提供值者（含前綴），皆備齊則為空。
 func MissingRequired(vals map[string]*string) []string {
+	//@ai:think intent=依 schema 檢查必填旗標是否齊備，回傳缺漏清單供 CLI 報錯 model=claude-opus-4-8
 	var missing []string
 	for _, p := range MapCommand.Params {
 		if !p.Required {

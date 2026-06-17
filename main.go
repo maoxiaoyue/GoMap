@@ -15,6 +15,7 @@ import (
 )
 
 func main() {
+	//@ai:think intent=程式進入點：先登錄所有 schema 再依旗標分派 GUI / CLI 兩種執行模式 model=claude-opus-4-8
 	// 啟動時把所有 schema 登錄到 schema.Global()（供 hyp context / lint / contract）。
 	commands.RegisterSchemas()
 	views.RegisterSchemas()
@@ -35,6 +36,7 @@ func main() {
 
 // runGUI 啟動 Fyne 桌面視窗，顯示主畫面。
 func runGUI() {
+	//@ai:think intent=視窗模式：建立 Fyne 視窗並顯示主畫面，供非技術使用者以 GUI 操作 model=claude-opus-4-8
 	a := app.New()
 	w := a.NewWindow("Map")
 	w.Resize(fyne.NewSize(800, 600))
@@ -44,6 +46,8 @@ func runGUI() {
 
 // runCLI 為命令列模式：依 schema 檢查 -i / -o，呼叫 service 產生 map。
 func runCLI(vals map[string]*string) {
+	//@ai:think intent=命令列模式：依 schema 驗證必填旗標後呼叫 service 產生 map model=claude-opus-4-8
+	//@ai:think special=缺參數回 exit 2、轉換失敗回 exit 1，方便腳本判斷狀態 model=claude-opus-4-8
 	if missing := commands.MissingRequired(vals); len(missing) > 0 {
 		fmt.Fprintln(os.Stderr, "缺少必填參數:", strings.Join(missing, ", "))
 		flag.Usage()
@@ -60,6 +64,7 @@ func runCLI(vals map[string]*string) {
 
 // usage 印出命令列說明；-i / -o 由 commands.MapCommand 的 schema 自動產生。
 func usage() {
+	//@ai:think intent=由 schema 的 Params 動態產生說明，讓旗標與說明文字維持單一事實來源 model=claude-opus-4-8
 	fmt.Fprintf(os.Stderr, "GoMap — %s\n\n", commands.MapCommand.Summary)
 	fmt.Fprint(os.Stderr, "用法:\n")
 	fmt.Fprint(os.Stderr, "  map --windows                      開啟圖形視窗 (GUI)\n")
