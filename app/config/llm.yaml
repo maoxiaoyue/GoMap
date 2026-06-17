@@ -59,16 +59,6 @@
 #   timeout: 30
 #   max_tokens: 256
 
-# --- Custom（自建 OpenAI-compatible API）---
-mode: api
-api:
-   provider: "custom"
-   base_url: "http://localhost:18080"   # 必填
-   model: "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P"
-   api_key: "123"
-   timeout: 30
-   max_tokens: 256
-
 # ============================================================
 # Mode 3: RAG（檢索增強生成，最精確，需要向量資料庫）
 # ============================================================
