@@ -10,7 +10,7 @@
 # "api"    — 連接遠端 API（OpenAI / Anthropic / Gemini）
 # "rag"    — RAG 模式（向量資料庫 + embedding + LLM 生成）
 
-mode: none
+# mode: none
 
 # ============================================================
 # Mode 1: Ollama（本地模型，零費用，建議開發用）
@@ -60,14 +60,14 @@ mode: none
 #   max_tokens: 256
 
 # --- Custom（自建 OpenAI-compatible API）---
-# mode: api
-# api:
-#   provider: "custom"
-#   base_url: "http://localhost:8000/v1"   # 必填
-#   model: "my-model"
-#   api_key: "my-key"
-#   timeout: 30
-#   max_tokens: 256
+mode: api
+api:
+   provider: "custom"
+   base_url: "http://localhost:18080"   # 必填
+   model: "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q5_K_P"
+   api_key: "123"
+   timeout: 30
+   max_tokens: 256
 
 # ============================================================
 # Mode 3: RAG（檢索增強生成，最精確，需要向量資料庫）

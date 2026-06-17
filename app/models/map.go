@@ -11,16 +11,9 @@ type CLIInput struct {
 	OutputDir string `json:"o"` // 輸出：產生 Obsidian map 的目錄 (vault)
 }
 
-// ScanInput 是進入 scanning 畫面所需的資料。
-type ScanInput struct {
-	Dir string `json:"dir"` // 要掃描的 Go 專案目錄
-}
-
 // MapResult 是一次轉換的結果摘要。
 //
-// 由 services.BuildMap 產出，並同時作為：
-//   - CLI 模式 (routers.MapCommand) 的 schema Output 契約
-//   - map 畫面 (routers.ViewRoutes) 的 schema Input（掃描完成後導航帶入）
+// 由 services.BuildMap 產出，並作為 CLI 命令 (commands.MapCommand) 的 schema Output 契約。
 type MapResult struct {
 	Packages  int    `json:"packages"`   // 掃描到的套件數
 	GoFiles   int    `json:"go_files"`   // 納入的 .go 檔數（不含 _test.go）
