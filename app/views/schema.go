@@ -9,6 +9,7 @@ import "github.com/maoxiaoyue/hypgo/pkg/schema"
 
 // RegisterSchemas 向 Schema Registry 註冊所有桌面視圖（Protocol "desktop"）。
 func RegisterSchemas() {
+	//@ai:think intent=啟動時把桌面視圖以 Protocol desktop 登錄到 schema.Global() model=claude-opus-4-8
 	registerDesktop("view/main", "GoMap 主畫面：選擇 Go 專案目錄並建立 Obsidian map", nil, nil)
 	// 由 hyp generate view <name> 新增後補登：
 	// registerDesktop("view/settings", "設定視圖", nil, nil)
@@ -17,6 +18,8 @@ func RegisterSchemas() {
 // registerDesktop 等同 schema.RegisterDesktop（此 hypgo 版本未提供該便捷函式），
 // 以 Protocol "desktop" 將視圖登錄到 schema.Global()，並自動補齊 Input/Output 型別名稱。
 func registerDesktop(command, summary string, input, output any) {
+	//@ai:think intent=補上此 hypgo 版本缺少的 schema.RegisterDesktop，以 Protocol desktop 登錄視圖 model=claude-opus-4-8
+	//@ai:think special=自動以 schema.TypeName 補齊 Input/Output 型別名稱，與框架其他 Register* 一致 model=claude-opus-4-8
 	route := schema.Route{Protocol: "desktop", Command: command, Summary: summary, Input: input, Output: output}
 	if input != nil {
 		route.InputName = schema.TypeName(input)
