@@ -17,6 +17,7 @@ type CLIInput struct {
 type MapResult struct {
 	Packages  int    `json:"packages"`   // 掃描到的套件數
 	GoFiles   int    `json:"go_files"`   // 納入的 .go 檔數（不含 _test.go）
-	Notes     int    `json:"notes"`      // 寫出的筆記數（套件筆記 + 索引）
+	Functions int    `json:"functions"`  // 寫出的函式說明節點數（帶 @ai 標註者）
+	Notes     int    `json:"notes"`      // 寫出的筆記數（套件 + 索引 + HypGo Context + 函式節點）
 	OutputDir string `json:"output_dir"` // 實際輸出目錄
 }

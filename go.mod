@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	fyne.io/fyne/v2 v2.5.4
-	github.com/maoxiaoyue/hypgo v0.8.7-0.20260617170231-2809bc68a047
+	github.com/maoxiaoyue/hypgo v0.8.9
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -47,3 +47,5 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 )
+
+replace github.com/maoxiaoyue/hypgo => D:/GoProjects/hypgo/workspace
